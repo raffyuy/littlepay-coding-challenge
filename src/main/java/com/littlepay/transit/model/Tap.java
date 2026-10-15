@@ -6,9 +6,14 @@ import java.time.Instant;
 public record Tap(
         long id,
         Instant dateTimeUtc,
-        TapType tapType,
+        Type tapType,
         String stopId,
         String companyId,
         String busId,
         String pan) {
+
+    public enum Type {
+        ON,
+        OFF
+    }
 }

@@ -18,5 +18,16 @@ public record Trip(
         String companyId,
         String busId,
         String pan,
-        TripStatus status) {
+        Status status) {
+
+    public enum Status {
+        /** Tapped on and off at different stops. */
+        COMPLETED,
+        /** Tapped on with no matching tap off. */
+        INCOMPLETE,
+        /** Tapped on and off at the same stop. */
+        CANCELLED,
+        /** Tapped off with no matching tap on. Not charged, needs review. */
+        UNSTARTED
+    }
 }
