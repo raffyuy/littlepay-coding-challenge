@@ -101,3 +101,4 @@ Output csv:
 Other considerations: 
 
 - Can there be stops that are not in the fare table? other invalid data?
+- Card numbers (PAN) aren't masked anywhere and I won't be bothering with a masking layer for simplicity's sake. 
