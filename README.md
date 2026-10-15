@@ -73,6 +73,9 @@ Things I'm taking as given:
 - The input is well-formed with no missing data.
 - All times are UTC.
 - All trips are within the same geolocation. (i.e. no need to think about multiple cities/currencies/timezones/etc) 
+- Fares are per pair of stops (where you got on and where you got off), not added up per segment.
+  e.g. Stop1 to Stop3 is $7.30, not $3.25 + $5.50.
+- Every pair of stops has a fare.
 
 On the input csv file: 
 
@@ -99,6 +102,6 @@ Output csv:
   atomically and are not dependent on order. However, it should be stable for a given input. 
 
 Other considerations: 
-
+- One fare table applies to all companies and buses. The fares are hard-coded, no need to make it configurable.
 - Can there be stops that are not in the fare table? other invalid data?
 - Card numbers (PAN) aren't masked anywhere and I won't be bothering with a masking layer for simplicity's sake. 
