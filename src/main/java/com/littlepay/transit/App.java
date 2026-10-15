@@ -1,12 +1,6 @@
 package com.littlepay.transit;
 
-/**
- * Entry point: reads taps from an input CSV and writes trips to an output CSV.
- */
-public final class App {
-
-    private App() {
-    }
+public class App {
 
     public static void main(String[] args) {
         if (args.length != 2) {
