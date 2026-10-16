@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /** One row of the output file.
- * UNSTARTED trips have no started/fromStopId,
+ * UNMATCHED trips have no started/fromStopId,
  * INCOMPLETE trips have no finished/toStopId.
  */
 public record Trip(
@@ -23,6 +23,6 @@ public record Trip(
         INCOMPLETE,
         CANCELLED,
         // tapped off with no matching tap on (needs review)
-        UNSTARTED
+        UNMATCHED
     }
 }

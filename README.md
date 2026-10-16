@@ -79,7 +79,9 @@ Things I'm taking as given:
 
 On the input csv file: 
 
+- I'm guessing it represents the data one worker would get from a queue partitioned by card (PAN), which would handle the horizontal scaling side of things. 
 - There is no guarantee that events are in order (as in real world event streaming where events can be late)
+- A reorder buffer can allow taps to be up to 24 hours late. 
 - There are no late events relating to any taps in this csv window coming in a later window
 - There are no "earlier" events relating to any taps in this csv window coming in from a prior window
 
@@ -88,16 +90,16 @@ Tap-to-trip matching business rules:
 - A tap ON and tap OFF belong to the same trip only if the PAN, CompanyId and BusID all match.
 - A second ON for the same card for any bus before any OFF means the first trip was never finished, so it's incomplete. 
 - An OFF with no matching ON (tap 6 in the example). Needs flagging for review, $0 charge, UNMATCHED instead of INCOMPLETE
-- Trips can't run forever. There should be a maximum trip length (probably within a day, still deciding on the number).
-  I'm thinking if an ON comes in and the OFF comes after 24hrs, it should probably count the ON as incomplete,
-  and the OFF as orphaned and needs review.
+- Trips can't run forever. Maximum trip length is 24 hours. If an OFF comes more than 24hrs after the ON, 
+  the ON is INCOMPLETE and the OFF is UNMATCHED. This is per trip, not per day, so a card can still make several trips in a day.
 - Duplicate (same tap recorded twice) or multiple taps in the same stop in a short span of time - treat as one tap. 
   - If time diff < 1 minute, treat as one tap
   - If time diff > 1 minute, treat as two trips, where the first is an INCOMPLETE trip, and the second is a new trip started. 
 
 Output csv: 
 
-- INCOMPLETE or UNSTARTED trip: Finished, ToStopId, and DurationSecs should be empty. UNSTARTED charge is $0.00.
+- INCOMPLETE trip: Finished, ToStopId, and DurationSecs should be empty.
+- UNMATCHED trip: Started, FromStopId, and DurationSecs should be empty. Charge is $0.00.
 - No required sorting for the output csv. I'm assuming these are potentially downstream events that are handled 
   atomically and are not dependent on order. However, it should be stable for a given input. 
 
