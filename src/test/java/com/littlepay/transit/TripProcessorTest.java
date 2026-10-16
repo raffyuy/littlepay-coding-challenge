@@ -39,6 +39,14 @@ class TripProcessorTest {
     }
 
     @Test
+    void tapAtAnUnknownStopIsSkippedAndTheRestStillProcessed() {
+        List<Tap> taps = List.of(on("13:00", STOP1), on("13:02", "Stop9"), off("13:05", STOP2));
+
+        assertThat(processAll(processor, taps)).singleElement()
+                .returns(Trip.Status.COMPLETED, Trip::status);
+    }
+
+    @Test
     void openTripsAreClosedAsIncompleteAtTheEnd() {
         List<Tap> taps = List.of(on("13:00", STOP1));
 
@@ -92,11 +100,11 @@ class TripProcessorTest {
 
     // tie-break scenario in case of events logged in the same second.
     @Test
-    void tapsAtTheSameTimeAreOrderedByTapId() {
-        Tap off = withId(2, off("13:00", STOP1));
-        Tap on = withId(1, on("13:00", STOP1));
+    void tapOnComesBeforeTapOffAtTheSameSecond() {
+        Tap off = withId(1, off("13:00", STOP1));
+        Tap on = withId(2, on("13:00", STOP1));
 
-        // must not be UNMATCHED + INCOMPLETE
+        // even with the OFF's id first, it must not be UNMATCHED + INCOMPLETE (charging the max fare)
         assertThat(processAll(freshProcessor(), List.of(off, on))).singleElement()
                 .returns(Trip.Status.CANCELLED, Trip::status);
     }
