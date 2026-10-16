@@ -23,7 +23,7 @@ public class TripMatcher {
 
     /**
      * @param fareTable - mapping of stops to fares
-     * @param maxTripLength -
+     * @param maxTripLength - longest allowed gap between an ON and its OFF to consider it a trip
      */
     public TripMatcher(FareTable fareTable, Duration maxTripLength) {
         this.fareTable = fareTable;
@@ -31,7 +31,7 @@ public class TripMatcher {
     }
 
     /**
-     * Main entry for tap events
+     * Main entry for tap events.
      * @return list of max 2 trips (2 when an OFF comes after the max trip length)
      */
     public List<Trip> onTap(Tap tap) {
