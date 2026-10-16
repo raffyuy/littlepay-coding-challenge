@@ -66,6 +66,28 @@ Started, Finished, DurationSecs, FromStopId, ToStopId, ChargeAmount, CompanyId, 
 
 The full output for the example input will go in once the logic is done.
 
+## Scenarios
+
+For a single card (PAN). Max trip length is 24 hours.
+
+| # | Scenario | Result |
+|---|---|---|
+| 1 | ON, then OFF at another stop | COMPLETED, fare between the stops |
+| 2 | ON, then OFF at the same stop | CANCELLED, $0 |
+| 3 | ON, then no more taps for that card | INCOMPLETE, max fare from ON stop |
+| 4 | ON, then ON again | INCOMPLETE for the first, second ON starts a new trip |
+| 5 | OFF with no ON before it | UNMATCHED, $0, for review |
+| 6 | ON, then OFF after the max trip length | INCOMPLETE (max fare from ON stop), then UNMATCHED ($0) |
+| 7 | ON, then OFF exactly at the max trip length | COMPLETED or CANCELLED as normal |
+| 8 | several ON/OFF pairs in one day | each pair is its own trip |
+
+### Some nice to haves (Might implement if I find time)
+
+- Matching on company and bus. Right now an ON and OFF are matched on the card alone. I'll assume for now that this is fine.
+- Duplicate taps. A double tap at the same stop would currently close the first ON as INCOMPLETE and charge the max fare. 
+  Ideally we treat ONs in the same stop within a minute as one tap.
+- Expiring abandoned ONs in case the "stream" is long or never ending (if we pretend the file is an event stream from a data pipeline)
+- 
 ## Assumptions (WIP - may modify later)
 
 Things I'm taking as given:
@@ -80,21 +102,17 @@ Things I'm taking as given:
 On the input csv file: 
 
 - I'm guessing it represents the data one worker would get from a queue partitioned by card (PAN), which would handle the horizontal scaling side of things. 
-- There is no guarantee that events are in order (as in real world event streaming where events can be late)
-- A reorder buffer can allow taps to be up to 24 hours late. 
+- There is no guarantee that events are in order (as in real world event streaming where events can be late) 
 - There are no late events relating to any taps in this csv window coming in a later window
 - There are no "earlier" events relating to any taps in this csv window coming in from a prior window
 
 Tap-to-trip matching business rules:
 
-- A tap ON and tap OFF belong to the same trip only if the PAN, CompanyId and BusID all match.
+- A tap ON and tap OFF are matched on the card (PAN) alone for now 
 - A second ON for the same card for any bus before any OFF means the first trip was never finished, so it's incomplete. 
 - An OFF with no matching ON (tap 6 in the example). Needs flagging for review, $0 charge, UNMATCHED instead of INCOMPLETE
 - Trips can't run forever. Maximum trip length is 24 hours. If an OFF comes more than 24hrs after the ON, 
   the ON is INCOMPLETE and the OFF is UNMATCHED. This is per trip, not per day, so a card can still make several trips in a day.
-- Duplicate (same tap recorded twice) or multiple taps in the same stop in a short span of time - treat as one tap. 
-  - If time diff < 1 minute, treat as one tap
-  - If time diff > 1 minute, treat as two trips, where the first is an INCOMPLETE trip, and the second is a new trip started. 
 
 Output csv: 
 
