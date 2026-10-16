@@ -1,6 +1,7 @@
 package com.littlepay.transit.matching;
 
 import com.littlepay.transit.fare.FareTable;
+import com.littlepay.transit.model.Tap;
 import com.littlepay.transit.model.Trip;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +11,7 @@ import java.util.List;
 
 import static com.littlepay.transit.TapFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.groups.Tuple.tuple;
 
 class TripMatcherTest {
@@ -199,5 +201,135 @@ class TripMatcherTest {
 
         assertThat(morning).singleElement().returns(Trip.Status.COMPLETED, Trip::status);
         assertThat(evening).singleElement().returns(Trip.Status.COMPLETED, Trip::status);
+    }
+
+    // S#9: different bus
+    @Test
+    void tapOffOnADifferentBusDoesNotCloseTheTrip() {
+        matcher.onTap(on("13:00", STOP1));
+
+        List<Trip> trips = matcher.onTap(tap(Tap.Type.OFF, at("13:05"), STOP2, COMPANY, BUS2, PAN));
+
+        assertThat(trips).extracting(Trip::status)
+                .containsExactly(Trip.Status.INCOMPLETE, Trip.Status.UNMATCHED);
+    }
+
+    // S#9: different company
+    @Test
+    void tapOffWithADifferentCompanyDoesNotCloseTheTrip() {
+        matcher.onTap(on("13:00", STOP1));
+
+        List<Trip> trips = matcher.onTap(tap(Tap.Type.OFF, at("13:05"), STOP2, COMPANY2, BUS, PAN));
+
+        assertThat(trips).extracting(Trip::status)
+                .containsExactly(Trip.Status.INCOMPLETE, Trip.Status.UNMATCHED);
+    }
+
+    // S#10: duplicate ON
+    @Test
+    void duplicateTapOnWithinAMinuteIsIgnored() {
+        matcher.onTap(on("13:00", STOP1));
+
+        assertThat(matcher.onTap(on("13:00:30", STOP1))).isEmpty();
+        assertThat(matcher.onTap(off("13:05", STOP2))).singleElement()
+                .returns(Trip.Status.COMPLETED, Trip::status)
+                .returns(at("13:00"), Trip::started);
+    }
+
+    // S#10: a minute or more apart is a new trip (S#4)
+    @Test
+    void tapOnAgainAMinuteLaterIsANewTrip() {
+        matcher.onTap(on("13:00", STOP1));
+
+        assertThat(matcher.onTap(on("13:01", STOP1))).singleElement()
+                .returns(Trip.Status.INCOMPLETE, Trip::status);
+    }
+
+    // S#10: a different stop is never a duplicate
+    @Test
+    void tapOnAtAnotherStopWithinAMinuteIsANewTrip() {
+        matcher.onTap(on("13:00", STOP1));
+
+        assertThat(matcher.onTap(on("13:00:30", STOP2))).singleElement()
+                .returns(Trip.Status.INCOMPLETE, Trip::status);
+    }
+
+    // S#11: abandoned ON expires once any later tap is past the max trip length
+    @Test
+    void abandonedTapOnIsClosedOnceTapsPassTheMaxTripLength() {
+        matcher.onTap(on("13:00", STOP1));
+
+        List<Trip> trips = matcher.onTap(tap(Tap.Type.ON, at(2, "13:01"), STOP2, COMPANY, BUS, PAN2));
+
+        assertThat(trips).singleElement()
+                .returns(PAN, Trip::pan)
+                .returns(Trip.Status.INCOMPLETE, Trip::status);
+    }
+
+    // S#11: exactly the max trip length isn't expired yet (same boundary as S#7)
+    @Test
+    void abandonedTapOnIsNotClosedAtExactlyTheMaxTripLength() {
+        matcher.onTap(on("13:00", STOP1));
+
+        assertThat(matcher.onTap(tap(Tap.Type.ON, at(2, "13:00"), STOP2, COMPANY, BUS, PAN2))).isEmpty();
+    }
+
+    // S#11: a second ON moves to the back, so an older trip from another card still expires first
+    @Test
+    void reopenedTripMovesBehindOlderOpenTrips() {
+        matcher.onTap(on("13:00", STOP1));
+        matcher.onTap(onCard(PAN2, "14:00", STOP2));
+        matcher.onTap(on("15:00", STOP3)); // PAN's 13:00 trip closes as INCOMPLETE, its 15:00 ON is now newest
+
+        List<Trip> trips = matcher.onTap(tap(Tap.Type.ON, at(2, "14:30"), STOP1, COMPANY, BUS, PAN3));
+
+        assertThat(trips).singleElement().returns(PAN2, Trip::pan);
+        assertThat(matcher.flush()).extracting(Trip::pan).contains(PAN);
+    }
+
+    // S#2: exactly the cancellation window still cancels
+    @Test
+    void tapOffAtTheSameStopTenMinutesLaterIsStillCancelled() {
+        matcher.onTap(on("08:00", STOP1));
+
+        assertThat(matcher.onTap(off("08:10", STOP1))).singleElement()
+                .returns(Trip.Status.CANCELLED, Trip::status);
+    }
+
+    // S#12: same stop after the cancellation window is a round trip, not a free cancellation
+    @Test
+    void tapOffAtTheSameStopAfterTheCancellationWindowIsNotCancelled() {
+        matcher.onTap(on("08:00", STOP1));
+
+        List<Trip> trips = matcher.onTap(off("08:10:01", STOP1));
+
+        assertThat(trips).extracting(Trip::status)
+                .containsExactly(Trip.Status.INCOMPLETE, Trip.Status.UNMATCHED);
+        assertThat(trips.getFirst().chargeAmount()).isEqualByComparingTo(FARE_STOP1_STOP3);
+    }
+
+    // S#10: an ON on a different bus is a real new trip, not a duplicate
+    @Test
+    void tapOnOnAnotherBusWithinAMinuteIsNotADuplicate() {
+        matcher.onTap(on("13:00", STOP1));
+
+        assertThat(matcher.onTap(tap(Tap.Type.ON, at("13:00:30"), STOP1, COMPANY, BUS2, PAN))).singleElement()
+                .returns(Trip.Status.INCOMPLETE, Trip::status);
+        assertThat(matcher.onTap(tap(Tap.Type.OFF, at("13:05"), STOP2, COMPANY, BUS2, PAN))).singleElement()
+                .returns(Trip.Status.COMPLETED, Trip::status)
+                .returns(BUS2, Trip::busId);
+    }
+
+    @Test
+    void tapAtAnUnknownStopIsRejected() {
+        matcher.onTap(on("13:00", STOP1));
+
+        assertThatThrownBy(() -> matcher.onTap(on("13:02", "Stop9")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Stop9");
+
+        // the open trip from Stop1 is untouched by the rejected tap
+        assertThat(matcher.onTap(off("13:05", STOP2))).singleElement()
+                .returns(Trip.Status.COMPLETED, Trip::status);
     }
 }

@@ -45,4 +45,15 @@ class FareTableTest {
         assertThatThrownBy(() -> fareTable.maxFareFrom("Stop9"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void requireKnownStopAcceptsStopsInTheTable() {
+        fareTable.requireKnownStop("Stop2");
+    }
+
+    @Test
+    void requireKnownStopRejectsOthers() {
+        assertThatThrownBy(() -> fareTable.requireKnownStop("Stop9"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

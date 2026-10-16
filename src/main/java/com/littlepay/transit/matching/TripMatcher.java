@@ -5,9 +5,11 @@ import com.littlepay.transit.model.Tap;
 import com.littlepay.transit.model.Trip;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.SequencedMap;
 
 /**
  * Handler for taps, matching them to create Trip records.
@@ -16,10 +18,17 @@ import java.util.Map;
  */
 public class TripMatcher {
 
+    // a repeated ON at the same stop, company, and bus, within this window is treated as one tap
+    private static final Duration DUPLICATE_WINDOW = Duration.ofMinutes(1);
+
+    // determines when cancellations can happen. later than that it's a round trip
+    private static final Duration CANCELLATION_WINDOW = Duration.ofMinutes(10);
+
     private final FareTable fareTable;
     private final Duration maxTripLength;
 
-    private final Map<String, Tap> openTapsByPan = new LinkedHashMap<>();
+    // tracks the open trips in the order of ingestion. the ordering + maxTripLength allows us to expireOpenTrips()
+    private final SequencedMap<String, Tap> openTapsByPan = new LinkedHashMap<>();
 
     /**
      * @param fareTable - mapping of stops to fares
@@ -32,22 +41,56 @@ public class TripMatcher {
 
     /**
      * Main entry for tap events.
-     * @return list of max 2 trips (2 when an OFF comes after the max trip length)
+     * @return trips closed by this tap, plus any open trips (from any PAN) that should expire based off this tap time
+     * @throws IllegalArgumentException if the tap's stop isn't in the fare table
      */
     public List<Trip> onTap(Tap tap) {
-        return switch (tap.tapType()) {
+        // an unknown stop is bad data. reject the tap rather than guess a fare
+        fareTable.requireKnownStop(tap.stopId());
+
+        List<Trip> trips = expireOpenTrips(tap.dateTimeUtc());
+        trips.addAll(switch (tap.tapType()) {
             case ON -> handleOn(tap);
             case OFF -> handleOff(tap);
-        };
+        });
+        return trips;
+    }
+
+    // S#6, S#11: a Tap OFF after the maxTripLength can't be used to close a Tap ON, so it's INCOMPLETE now.
+    // Relies on tap time as the clock. Attempt to reduce memory use by only keeping open trips within the max trip length.
+    private List<Trip> expireOpenTrips(Instant now) {
+        List<Trip> expired = new ArrayList<>();
+        while (!openTapsByPan.isEmpty() && hasExpired(openTapsByPan.firstEntry().getValue(), now)) {
+            expired.add(incomplete(openTapsByPan.pollFirstEntry().getValue()));
+        }
+        return expired;
+    }
+
+    private boolean hasExpired(Tap on, Instant now) {
+        return now.isAfter(on.dateTimeUtc().plus(maxTripLength));
     }
 
     private List<Trip> handleOn(Tap on) {
-        Tap previousOn = openTapsByPan.put(on.pan(), on);
-        if (previousOn == null) {
+        Tap openOn = openTapsByPan.get(on.pan());
+
+        // S#10: duplicate ON, e.g. the card was read twice
+        if (isDuplicate(openOn, on)) {
+            return List.of();
+        }
+
+        openTapsByPan.putLast(on.pan(), on);
+        if (openOn == null) {
             return List.of();
         }
         // S#4: has active ON, so the second ON closes the previous one.
-        return List.of(incomplete(previousOn));
+        return List.of(incomplete(openOn));
+    }
+
+    private boolean isDuplicate(Tap openOn, Tap on) {
+        return openOn != null
+                && openOn.stopId().equals(on.stopId())
+                && sameCompanyAndBus(openOn, on)
+                && Duration.between(openOn.dateTimeUtc(), on.dateTimeUtc()).compareTo(DUPLICATE_WINDOW) < 0;
     }
 
     private List<Trip> handleOff(Tap off) {
@@ -58,23 +101,32 @@ public class TripMatcher {
             return List.of(unmatched(off));
         }
 
-        // S#6: exceeded max trip length
-        if (!withinMaxTripLength(on, off)) {
+        // S#9: OFF on a different company or bus isn't the same trip
+        // (S#6, an OFF past the max trip length, never gets here: expireOpenTrips() already closed that ON)
+        if (!sameCompanyAndBus(on, off)) {
             return List.of(incomplete(on), unmatched(off));
         }
 
-        // S#2: same stop
         if (on.stopId().equals(off.stopId())) {
-            return List.of(cancelled(on, off));
+            // S#2: same stop, soon after the ON
+            if (withinCancellationWindow(on, off)) {
+                return List.of(cancelled(on, off));
+            }
+            // S#12: same stop but much later, so they rode somewhere and came back. Not a free cancellation.
+            return List.of(incomplete(on), unmatched(off));
         }
 
         // S#1, S#7 - normal completion
         return List.of(completed(on, off));
     }
 
-    // Inclusive boundary
-    private boolean withinMaxTripLength(Tap on, Tap off) {
-        return !off.dateTimeUtc().isAfter(on.dateTimeUtc().plus(maxTripLength));
+    // boundary inclusive: exactly the window still counts as a cancellation
+    private boolean withinCancellationWindow(Tap on, Tap off) {
+        return !off.dateTimeUtc().isAfter(on.dateTimeUtc().plus(CANCELLATION_WINDOW));
+    }
+
+    private boolean sameCompanyAndBus(Tap on, Tap off) {
+        return on.companyId().equals(off.companyId()) && on.busId().equals(off.busId());
     }
 
     private Trip completed(Tap on, Tap off) {

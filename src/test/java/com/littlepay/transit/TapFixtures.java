@@ -15,8 +15,11 @@ public final class TapFixtures {
     public static final LocalDate DAY = LocalDate.of(2023, 1, 22);
     public static final String PAN = "1234123412341234";
     public static final String PAN2 = "4111111111111111";
+    public static final String PAN3 = "5500005555555559";
     public static final String COMPANY = "Company1";
+    public static final String COMPANY2 = "Company2";
     public static final String BUS = "Bus21";
+    public static final String BUS2 = "Bus36";
 
     public static final String STOP1 = "Stop1";
     public static final String STOP2 = "Stop2";

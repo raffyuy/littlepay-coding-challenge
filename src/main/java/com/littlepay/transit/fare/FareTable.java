@@ -44,6 +44,12 @@ public class FareTable {
         return fare;
     }
 
+    public void requireKnownStop(String stop) {
+        if (!maxFareByStop.containsKey(stop)) {
+            throw new IllegalArgumentException("Unknown stop: " + stop);
+        }
+    }
+
     // used to charge incomplete trips
     public BigDecimal maxFareFrom(String stop) {
         BigDecimal fare = maxFareByStop.get(stop);
