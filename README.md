@@ -1,8 +1,5 @@
 # Transit Trips
 
-Work in progress. Right now this is mostly my notes and initial assumptions from reading the brief, 
-plus a project skeleton.
-
 ## The problem
 
 Passengers tap a credit card (identified by its PAN) when they get on a bus and again when they get off. 
@@ -35,10 +32,16 @@ The brief says to focus on the matching and pricing logic over the CSV handling 
 ./mvnw test
 ```
 
-### Run the app (not implemented yet):
+### Run the app:
 
 ```bash
 ./mvnw -q compile exec:java -Dexec.args="<input taps.csv> <output trips.csv>"
+```
+
+e.g. for the example from the brief:
+
+```bash
+./mvnw -q compile exec:java -Dexec.args="src/test/resources/example/taps.csv trips.csv"
 ```
 
 ## Sample input
@@ -64,7 +67,14 @@ Started, Finished, DurationSecs, FromStopId, ToStopId, ChargeAmount, CompanyId, 
 22-01-2023 13:00:00, 22-01-2023 13:05:00, 300, Stop1, Stop2, $3.25, Company1, Bus37, 5500005555555559, COMPLETED
 ```
 
-The full output for the example input will go in once the logic is done.
+Full output for the example input, saved in `src/test/resources/example/trips.csv`:
+```
+Started, Finished, DurationSecs, FromStopId, ToStopId, ChargeAmount, CompanyId, BusID, PAN, Status
+22-01-2023 13:00:00, 22-01-2023 13:05:00, 300, Stop1, Stop2, $3.25, Company1, Bus37, 5500005555555559, COMPLETED
+22-01-2023 09:20:00, , , Stop3, , $7.30, Company1, Bus36, 4111111111111111, INCOMPLETE
+23-01-2023 08:00:00, 23-01-2023 08:02:00, 120, Stop1, Stop1, $0.00, Company1, Bus37, 4111111111111111, CANCELLED
+, 24-01-2023 16:30:00, , , Stop2, $0.00, Company1, Bus37, 5500005555555559, UNMATCHED
+```
 
 ## Scenarios
 
@@ -88,7 +98,7 @@ For a single card (PAN). Max trip length is 24 hours.
   Ideally we treat ONs in the same stop within a minute as one tap.
 - Expiring abandoned ONs in case the "stream" is long or never ending (if we pretend the file is an event stream from a data pipeline)
 - 
-## Assumptions (WIP - may modify later)
+## Assumptions - (may still be refined)
 
 Things I'm taking as given:
 
@@ -103,6 +113,9 @@ On the input csv file:
 
 - I'm guessing it represents the data one worker would get from a queue partitioned by card (PAN), which would handle the horizontal scaling side of things. 
 - There is no guarantee that events are in order (as in real world event streaming where events can be late) 
+- Since this is a finite file, taps are sorted by time before matching. In a live prod event stream 
+  this would need a reorder buffer that holds taps for a lateness window instead.
+- In case there are events from the same PAN in the same second, I'll assume the correct order is by ID.
 - There are no late events relating to any taps in this csv window coming in a later window
 - There are no "earlier" events relating to any taps in this csv window coming in from a prior window
 
