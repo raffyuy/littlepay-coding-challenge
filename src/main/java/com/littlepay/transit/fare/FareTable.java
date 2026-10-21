@@ -33,7 +33,11 @@ public class FareTable {
         return new FareTable(Map.of(
                 new StopPair("Stop1", "Stop2"), new BigDecimal("3.25"),
                 new StopPair("Stop2", "Stop3"), new BigDecimal("5.50"),
-                new StopPair("Stop1", "Stop3"), new BigDecimal("7.30")));
+                new StopPair("Stop1", "Stop3"), new BigDecimal("7.30"),
+                new StopPair("Stop1", "Stop4"), new BigDecimal("6.30"),
+                new StopPair("Stop2", "Stop4"), new BigDecimal("4.30"),
+                new StopPair("Stop3", "Stop4"), new BigDecimal("5.30")
+        ));
     }
 
     public BigDecimal fareBetween(String fromStop, String toStop) {
